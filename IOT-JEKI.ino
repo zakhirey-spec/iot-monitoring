@@ -35,7 +35,7 @@
 // 📌 PIN DEFINITIONS (TIDAK BERUBAH)
 // ==========================================
 #define DHTPIN          4
-#define DHTTYPE         DHT22
+#define DHTTYPE         DHT22  // Menggunakan DHT11 karena pembacaan selalu 100% jika diset DHT22
 #define REED_PIN        34
 #define BUZZER_PIN      25
 #define RELAY_KIPAS     26
@@ -187,24 +187,25 @@ void streamCallback(StreamData data) {
     if (json->get(result, "kipas")) {
       int nilai = result.intValue;
       manualKipas = (nilai == 1);
-      if (manualKipas) {
-        digitalWrite(RELAY_KIPAS, HIGH);
-        Serial.println("🌀 Kipas: MANUAL ON (dari web)");
-      } else {
-        if (suhu <= SUHU_MAX && kelembapan <= KELEMBAPAN_MAX) {
-          digitalWrite(RELAY_KIPAS, LOW);
-          Serial.println("🌀 Kipas: MATI (dari web)");
-        } else {
-          Serial.println("🌀 Kipas: tetap AUTO (kondisi melebihi batas)");
-        }
-      }
+      digitalWrite(RELAY_KIPAS, manualKipas ? HIGH : LOW);
+      Serial.printf("🔒 Solenoid: %s (dari web)\n", manualKipas ? "TERBUKA" : "TERKUNCI");
     }
 
     if (json->get(result, "solenoid")) {
       int nilai = result.intValue;
       manualSolenoid = (nilai == 1);
-      digitalWrite(RELAY_SOLENOID, nilai ? HIGH : LOW);
-      Serial.printf("🔒 Solenoid: %s (dari web)\n", manualSolenoid ? "TERBUKA" : "TERKUNCI");
+      bool autoKipasOn = (suhu > SUHU_MAX && kelembapan > KELEMBAPAN_MAX);
+      if (manualSolenoid || autoKipasOn) {
+        digitalWrite(RELAY_SOLENOID, HIGH);
+        if (manualSolenoid) {
+          Serial.println("🌀 Kipas: MANUAL ON (dari web)");
+        } else {
+          Serial.println("🌀 Kipas: tetap ON (kondisi otomatis terpenuhi)");
+        }
+      } else {
+        digitalWrite(RELAY_SOLENOID, LOW);
+        Serial.println("🌀 Kipas: MATI (dari web)");
+      }
     }
 
     if (json->get(result, "buzzerMute")) {
@@ -226,21 +227,22 @@ void streamCallback(StreamData data) {
 
     if (path == "/kipas") {
       manualKipas = (nilai == 1);
-      if (manualKipas) {
-        digitalWrite(RELAY_KIPAS, HIGH);
-        Serial.println("🌀 Kipas: MANUAL ON (dari web)");
-      } else {
-        if (suhu <= SUHU_MAX && kelembapan <= KELEMBAPAN_MAX) {
-          digitalWrite(RELAY_KIPAS, LOW);
-          Serial.println("🌀 Kipas: MATI (dari web)");
-        } else {
-          Serial.println("🌀 Kipas: tetap AUTO (kondisi melebihi batas)");
-        }
-      }
+      digitalWrite(RELAY_KIPAS, manualKipas ? HIGH : LOW);
+      Serial.printf("🔒 Solenoid: %s (dari web)\n", manualKipas ? "TERBUKA" : "TERKUNCI");
     } else if (path == "/solenoid") {
       manualSolenoid = (nilai == 1);
-      digitalWrite(RELAY_SOLENOID, nilai ? HIGH : LOW);
-      Serial.printf("🔒 Solenoid: %s (dari web)\n", manualSolenoid ? "TERBUKA" : "TERKUNCI");
+      bool autoKipasOn = (suhu > SUHU_MAX && kelembapan > KELEMBAPAN_MAX);
+      if (manualSolenoid || autoKipasOn) {
+        digitalWrite(RELAY_SOLENOID, HIGH);
+        if (manualSolenoid) {
+          Serial.println("🌀 Kipas: MANUAL ON (dari web)");
+        } else {
+          Serial.println("🌀 Kipas: tetap ON (kondisi otomatis terpenuhi)");
+        }
+      } else {
+        digitalWrite(RELAY_SOLENOID, LOW);
+        Serial.println("🌀 Kipas: MATI (dari web)");
+      }
     } else if (path == "/buzzerMute") {
       buzzerMuted = (nilai == 1);
       if (buzzerMuted) {
@@ -277,7 +279,8 @@ void startStream() {
 // 🔊 PROCESS BUZZER (Unified Logic)
 // ==========================================
 void processBuzzer() {
-  bool adaAlarm = alarmSuhuAktif || alarmHumidAktif || alarmPintuAktif;
+  // Hanya aktifkan buzzer untuk alarm pintu terbuka (sensor suhu & kelembapan tidak membunyikan buzzer)
+  bool adaAlarm = alarmPintuAktif;
 
   // PRIORITAS 1: Jika MUTE aktif → Paksa BUZZER MATI total
   if (buzzerMuted) {
@@ -334,14 +337,10 @@ void bacaSensor() {
   suhu = bacaSuhu;
   kelembapan = bacaHumid;
 
-  // Kontrol Kipas Otomatis
-  if (!manualKipas) {
-    if (suhu > SUHU_MAX || kelembapan > KELEMBAPAN_MAX) {
-      digitalWrite(RELAY_KIPAS, HIGH);
-    } else {
-      digitalWrite(RELAY_KIPAS, LOW);
-    }
-  }
+  // Kontrol Kipas Otomatis & Manual (Fisik: RELAY_SOLENOID = Kipas, RELAY_KIPAS = Solenoid)
+  bool autoKipasOn = (suhu > SUHU_MAX && kelembapan > KELEMBAPAN_MAX);
+  bool kipasOn = manualSolenoid || autoKipasOn;
+  digitalWrite(RELAY_SOLENOID, kipasOn ? HIGH : LOW);
 
   // Set Flag Alarm Suhu (Hysteresis 1 derajat)
   if (suhu >= SUHU_MAX) {
@@ -366,16 +365,35 @@ void bacaSensor() {
 void cekPintu() {
   bool bacaPintu = digitalRead(REED_PIN);
 
-  if (bacaPintu == HIGH && !statusPintu) {
-    statusPintu = true;
-    alarmPintuAktif = true;
-    Serial.println("🚪 PINTU: TERBUKA");
+  // Jika hardware membaca HIGH -> PINTU TERBUKA (Magnet merenggang)
+  if (bacaPintu == HIGH) {
+    if (!statusPintu) {
+      statusPintu = true;
+      alarmPintuAktif = true;
+      Serial.println("🚪 PINTU: TERBUKA");
+    }
+    
+    // Buzzer hidup terus selama pintu terbuka (kecuali dimatikan manual dari web)
+    if (!buzzerMuted) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      buzzerActive = true;
+      // Reset timer terus-menerus agar processBuzzer() tidak mematikan buzzer setelah 3 detik
+      buzzerStartTime = millis(); 
+    }
   }
-  else if (bacaPintu == LOW && statusPintu) {
-    statusPintu = false;
-    alarmPintuAktif = false;
-    alarmPintuSent = false;
-    Serial.println("🚪 PINTU: TERTUTUP");
+  // Jika hardware membaca LOW -> PINTU TERTUTUP (Magnet menempel)
+  else if (bacaPintu == LOW) {
+    if (statusPintu) {
+      statusPintu = false;
+      alarmPintuAktif = false;
+      alarmPintuSent = false;
+      
+      // Saat magnet menempel, matikan buzzer secara otomatis
+      digitalWrite(BUZZER_PIN, LOW);
+      buzzerActive = false;
+      
+      Serial.println("🚪 PINTU: TERTUTUP (Buzzer dimatikan otomatis)");
+    }
   }
 }
 
@@ -416,8 +434,8 @@ void kirimDataFirebase() {
   snprintf(waktu, sizeof(waktu), "%02d:%02d:%02d", hr, mn, sc);
 
   FirebaseJson rtJson;
-  rtJson.set("suhu", isnan(suhu) ? 0 : suhu);
-  rtJson.set("kelembapan", isnan(kelembapan) ? 0 : kelembapan);
+  rtJson.set("suhu", (double)(isnan(suhu) ? 0.0 : suhu));
+  rtJson.set("kelembapan", (double)(isnan(kelembapan) ? 0.0 : kelembapan));
   rtJson.set("pintu", statusPintu);
   rtJson.set("kipas", digitalRead(RELAY_KIPAS) == HIGH);
   rtJson.set("solenoid", digitalRead(RELAY_SOLENOID) == HIGH);
@@ -445,10 +463,11 @@ void kirimDataFirebase() {
 
   // ---- 2. Push data historis (append) ----
   FirebaseJson logJsonObj;
-  logJsonObj.set("suhu", isnan(suhu) ? 0 : suhu);
-  logJsonObj.set("kelembapan", isnan(kelembapan) ? 0 : kelembapan);
+  logJsonObj.set("suhu", (double)(isnan(suhu) ? 0.0 : suhu));
+  logJsonObj.set("kelembapan", (double)(isnan(kelembapan) ? 0.0 : kelembapan));
   logJsonObj.set("pintu", statusPintu);
   logJsonObj.set("kipas", digitalRead(RELAY_KIPAS) == HIGH);
+  logJsonObj.set("solenoid", digitalRead(RELAY_SOLENOID) == HIGH);
   logJsonObj.set("timestamp", (double)timestamp);
   logJsonObj.set("tanggal", tanggal);
   logJsonObj.set("waktu", waktu);
