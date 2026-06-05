@@ -1,0 +1,29 @@
+{
+  "rules": {
+    /* 
+      Dalam proyek ini ESP32 diatur dengan mode NoAuth.
+      Namun, Anda sebaiknya membatasi strukturnya agar data tetap valid.
+    */
+    ".read": true,
+    ".write": true,
+    
+    /* VALIDASI DATA (Opsional tapi sangat direkomendasikan) */
+    "realtime": {
+      ".validate": "newData.hasChildren(['suhu', 'kelembapan', 'pintu'])"
+    },
+    "kontrol": {
+      "kipas": { ".validate": "newData.isNumber() && (newData.val() == 0 || newData.val() == 1)" },
+      "solenoid": { ".validate": "newData.isNumber() && (newData.val() == 0 || newData.val() == 1)" },
+      "buzzerMute": { ".validate": "newData.isNumber() && (newData.val() == 0 || newData.val() == 1)" }
+    },
+    "log": {
+      ".indexOn": ["timestamp"],
+      "$logId": {
+        ".validate": "newData.hasChildren(['suhu', 'kelembapan', 'timestamp'])"
+      }
+    },
+    "alarm": {
+      ".indexOn": ["timestamp"]
+    }
+  }
+}
