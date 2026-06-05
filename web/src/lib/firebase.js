@@ -1,21 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getDatabase, ref, onValue, set, push, get, query, orderByChild, limitToLast, update } from "firebase/database";
 
-const requiredEnvVars = [
-  'NEXT_PUBLIC_FIREBASE_API_KEY',
-  'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
-  'NEXT_PUBLIC_FIREBASE_DATABASE_URL',
-  'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
-  'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET',
-  'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
-  'NEXT_PUBLIC_FIREBASE_APP_ID',
-];
-
-const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
-if (missingEnvVars.length) {
-  console.error('Firebase environment variables missing:', missingEnvVars.join(', '));
-}
-
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -25,6 +10,14 @@ const firebaseConfig = {
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
+
+const missingEnvVars = Object.entries(firebaseConfig)
+  .filter(([_, value]) => !value)
+  .map(([key]) => key);
+
+if (missingEnvVars.length) {
+  console.error('Firebase environment variables missing:', missingEnvVars.join(', '));
+}
 
 let app;
 let database;
@@ -79,8 +72,13 @@ export function subscribeRealtime(callback) {
   const unsubscribe = onValue(
     realtimeRef,
     (snapshot) => {
-      const data = snapshot.val();
-      callback({ ...DEFAULT_REALTIME, ...(data || {}) });
+      const rawData = snapshot.val();
+      const data = { ...DEFAULT_REALTIME, ...(rawData || {}) };
+      // SWAP data kipas dan solenoid karena pemasangan hardware tertukar
+      const tempKipas = data.kipas;
+      data.kipas = data.solenoid;
+      data.solenoid = tempKipas;
+      callback(data);
     },
     (error) => {
       console.error('Firebase realtime subscription error:', error);
@@ -145,8 +143,13 @@ export function subscribeKontrol(callback) {
   const unsubscribe = onValue(
     kontrolRef,
     (snapshot) => {
-      const data = snapshot.val();
-      callback({ kipas: 0, solenoid: 0, buzzerMute: 0, ...(data || {}) });
+      const rawData = snapshot.val();
+      const data = { kipas: 0, solenoid: 0, buzzerMute: 0, ...(rawData || {}) };
+      // SWAP data kipas dan solenoid
+      const tempKipas = data.kipas;
+      data.kipas = data.solenoid;
+      data.solenoid = tempKipas;
+      callback(data);
     },
     (error) => {
       console.error('Firebase kontrol subscription error:', error);
@@ -160,7 +163,8 @@ export async function setKontrolKipas(value) {
   if (!database) {
     throw new Error('Firebase database not initialized');
   }
-  const kontrolRef = ref(database, "kontrol/kipas");
+  // SWAP target: mengarah ke solenoid karena hardware tertukar
+  const kontrolRef = ref(database, "kontrol/solenoid");
   await set(kontrolRef, value);
 }
 
@@ -168,7 +172,8 @@ export async function setKontrolSolenoid(value) {
   if (!database) {
     throw new Error('Firebase database not initialized');
   }
-  const kontrolRef = ref(database, "kontrol/solenoid");
+  // SWAP target: mengarah ke kipas karena hardware tertukar
+  const kontrolRef = ref(database, "kontrol/kipas");
   await set(kontrolRef, value);
 }
 
@@ -206,7 +211,12 @@ export function subscribeLogHistory(limit, callback) {
     }
     const data = [];
     snapshot.forEach((child) => {
-      data.push({ id: child.key, ...child.val() });
+      const raw = child.val();
+      // SWAP data kipas dan solenoid
+      const tempKipas = raw.kipas;
+      raw.kipas = raw.solenoid;
+      raw.solenoid = tempKipas;
+      data.push({ id: child.key, ...raw });
     });
     callback(data.sort((a, b) => a.timestamp - b.timestamp));
   });

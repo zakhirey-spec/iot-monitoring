@@ -17,8 +17,18 @@ export default function RiwayatPage() {
     return () => unsubscribe();
   }, [limit]);
 
-  const formatDate = (ts) => {
-    const d = new Date(ts * 1000);
+  const formatDate = (log) => {
+    // Gunakan string tanggal & waktu dari ESP32 jika tersedia (paling akurat dan aman)
+    if (log.tanggal && log.waktu) {
+      // Format ulang sedikit agar lebih enak dibaca (YYYY-MM-DD HH:MM:SS)
+      return `${log.tanggal} ${log.waktu}`;
+    }
+    
+    // Fallback jika tidak ada string tanggal/waktu
+    const ts = log.timestamp || 0;
+    // Jika ts sangat besar, berarti sudah dalam milidetik. Jika kecil, berarti dalam detik.
+    const dateMs = ts > 10000000000 ? ts : ts * 1000;
+    const d = new Date(dateMs);
     return d.toLocaleString("id-ID", { 
       year: 'numeric', month: 'short', day: 'numeric', 
       hour: '2-digit', minute: '2-digit', second: '2-digit' 
@@ -32,17 +42,17 @@ export default function RiwayatPage() {
           <h1 className="page-title">Riwayat Data</h1>
           <p className="subtitle">Log historis sensor dan kondisi kontainer</p>
         </div>
-        
-        <div style={{display: "flex", gap: "1rem", alignItems: "center"}}>
-          <span style={{fontSize: "0.85rem", color: "var(--text-secondary)"}}>Tampilkan:</span>
-          <select 
-            value={limit} 
+
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Tampilkan:</span>
+          <select
+            value={limit}
             onChange={(e) => setLimit(Number(e.target.value))}
             style={{
-              background: "rgba(255,255,255,0.05)", 
-              color: "white", 
-              border: "1px solid var(--border-light)", 
-              padding: "0.5rem", 
+              background: "rgba(255,255,255,0.05)",
+              color: "white",
+              border: "1px solid var(--border-light)",
+              padding: "0.5rem",
               borderRadius: "var(--radius-sm)",
               outline: "none"
             }}
@@ -68,7 +78,7 @@ export default function RiwayatPage() {
 
       <div className="card glass">
         <h3 style={{ fontSize: "1.1rem", marginBottom: "1rem" }}>Tabel Data Log</h3>
-        
+
         <div style={{ overflowX: "auto" }}>
           <table className="data-table">
             <thead>
@@ -83,7 +93,7 @@ export default function RiwayatPage() {
             <tbody>
               {logs.slice().reverse().map((log, index) => (
                 <tr key={log.id || index}>
-                  <td>{formatDate(log.timestamp)}</td>
+                  <td>{formatDate(log)}</td>
                   <td>
                     <span style={{ color: log.suhu > 30 ? "var(--danger)" : "inherit" }}>
                       {log.suhu.toFixed(1)}
@@ -103,7 +113,7 @@ export default function RiwayatPage() {
                   </td>
                   <td>
                     {log.kipas ? (
-                      <span className="badge badge-neutral" style={{color: "var(--accent-blue)"}}>ON</span>
+                      <span className="badge badge-neutral" style={{ color: "var(--accent-blue)" }}>ON</span>
                     ) : (
                       <span className="badge badge-neutral">OFF</span>
                     )}
