@@ -7,8 +7,7 @@
 // ==========================================
 
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <HTTPClient.h>
+#include <FirebaseESP32.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
 #include <Wire.h>
@@ -75,9 +74,10 @@ DHT dht(DHTPIN, DHTTYPE);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 RTC_DS3231 rtc;
 
-// Firebase Objects (REST API untuk versi 2.2.x)
-WiFiClientSecure ssl_client;
-HTTPClient http;
+// Firebase Objects
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
 
 // ==========================================
 // 📊 STATUS SISTEM
@@ -152,10 +152,20 @@ void connectWiFi() {
 // 🔥 INISIALISASI FIREBASE
 // ==========================================
 void initFirebase() {
-  Serial.println("🔥 Menginisialisasi Firebase REST API...");
-  ssl_client.setInsecure();
+  Serial.println("🔥 Menginisialisasi Firebase...");
+  
+  // Konfigurasi Database URL dan API Key
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+
+  // Sign-up sebagai anonymous atau guest
+  config.signer.test_mode = true; 
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+  
   firebaseReady = true;
-  Serial.println("✅ Firebase REST API siap!");
+  Serial.println("✅ Firebase siap!");
 }
 
 // ==========================================
@@ -207,14 +217,6 @@ void streamCallback(FirebaseStream data) {
 void streamTimeoutCallback(bool timeout) {
   if (timeout) {
     Serial.println("⚠️ Firebase stream timeout!");
-  }
-}
-        buzzerActive = false;
-        Serial.println("🔕 Buzzer: MUTE AKTIF (dari web)");
-      } else {
-        Serial.println("🔊 Buzzer: MUTE DINONAKTIFKAN (dari web)");
-      }
-    }
   }
 }
 
