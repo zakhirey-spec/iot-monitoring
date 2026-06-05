@@ -20,10 +20,10 @@
 // 🔐 KONFIGURASI FIREBASE
 // ==========================================
 // GANTI dengan API Key dari Firebase Console → Project Settings
-#define API_KEY "AIzaSyAdaq-v_4r3HeY4_lIiaN_J8FVsXgXzVTg"
+#define API_KEY "AIzaSyBgEWDpcrYS1vNwytdBDkNu-B8J3arMDRw"
 
 // Database URL (sudah diketahui dari project Anda)
-#define DATABASE_URL "https://iot-monitoring-1d95d-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define DATABASE_URL "https://iot-monitoring-fd31f-default-rtdb.asia-southeast1.firebasedatabase.app"
 
 // ==========================================
 // 📶 KONFIGURASI WIFI
