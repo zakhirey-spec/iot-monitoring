@@ -4,17 +4,42 @@ import { useState } from "react";
 
 export default function KontrolPanel({ data }) {
   const [loading, setLoading] = useState("");
+  const [lastToggleTime, setLastToggleTime] = useState({});
+  const [error, setError] = useState("");
+
+  const safeData = {
+    kipas: false,
+    solenoid: false,
+    buzzerMute: false,
+    ...data,
+  };
 
   const handleToggle = async (type, currentValue) => {
+    const now = Date.now();
+    const lastTime = lastToggleTime[type] || 0;
+    const DEBOUNCE_MS = 800;
+
+    if (now - lastTime < DEBOUNCE_MS) {
+      return;
+    }
+
+    if (loading && loading !== type) {
+      return;
+    }
+
     setLoading(type);
+    setError("");
+
     try {
       const newValue = currentValue ? 0 : 1;
       if (type === "kipas") await setKontrolKipas(newValue);
       if (type === "solenoid") await setKontrolSolenoid(newValue);
       if (type === "buzzer") await setKontrolBuzzerMute(newValue);
+      setLastToggleTime((prev) => ({ ...prev, [type]: now }));
     } catch (error) {
       console.error("Gagal mengirim kontrol:", error);
-      alert("Gagal mengirim perintah ke ESP32");
+      setError("Gagal mengirim perintah ke ESP32");
+      setTimeout(() => setError(""), 4000);
     } finally {
       setTimeout(() => setLoading(""), 500);
     }
@@ -125,6 +150,11 @@ export default function KontrolPanel({ data }) {
 
       <h3 style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>Panel Kontrol</h3>
       <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Kendali manual perangkat dari jarak jauh</p>
+      {error && (
+        <div style={{ color: "var(--danger)", marginBottom: "1rem", fontSize: "0.85rem" }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       <div className="control-list">
         {/* Kontrol Kipas */}

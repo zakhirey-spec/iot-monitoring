@@ -1,15 +1,13 @@
 // ==========================================
 // 🏗️ SISTEM MONITORING KONTAINER LOGISTIK
-// ESP32 + Firebase Realtime Database
+// ESP32 + Firebase REST API (Kompatibel 2.2.9)
 // ==========================================
-// Migrasi dari Blynk ke Firebase
-// Library: FirebaseClient by Mobizt (terbaru)
+// REST API version - tidak perlu FirebaseClient library kompleks
 // ==========================================
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <ArduinoJson.h>
 #include <DHT.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -20,10 +18,7 @@
 // ==========================================
 // 🔐 KONFIGURASI FIREBASE
 // ==========================================
-// GANTI dengan API Key dari Firebase Console → Project Settings
 #define API_KEY "AIzaSyAdaq-v_4r3HeY4_lIiaN_J8FVsXgXzVTg"
-
-// Database URL (sudah diketahui dari project Anda)
 #define DATABASE_URL "https://iot-monitoring-1d95d-default-rtdb.asia-southeast1.firebasedatabase.app"
 
 // ==========================================
@@ -33,7 +28,7 @@
 #define WIFI_PASSWORD "ayamjoper"
 
 // ==========================================
-// 📌 PIN DEFINITIONS (TIDAK BERUBAH)
+// 📌 PIN DEFINITIONS
 // ==========================================
 #define DHTPIN          4
 #define DHTTYPE         DHT22
@@ -54,18 +49,19 @@
 // ==========================================
 #define SUHU_MAX          30.0
 #define KELEMBAPAN_MAX    80.0
-#define BUZZER_DURATION   3000    // 3 detik
-#define INTERVAL_KIRIM    15000   // 15 detik kirim data
-#define INTERVAL_SENSOR   2000    // 2 detik baca sensor
-#define INTERVAL_PINTU    300     // 300ms cek pintu
-#define INTERVAL_OLED     1000    // 1 detik update OLED
-#define INTERVAL_HEARTBEAT 60000  // 1 menit heartbeat
+#define BUZZER_DURATION   3000
+#define INTERVAL_KIRIM    15000   // 15 detik
+#define INTERVAL_SENSOR   2000
+#define INTERVAL_PINTU    300
+#define INTERVAL_OLED     1000
+#define INTERVAL_HEARTBEAT 60000
+#define INTERVAL_KONTROL  10000   // Poll kontrol setiap 10 detik
 
 // ==========================================
 // 🔧 NTP CONFIGURATION
 // ==========================================
 #define NTP_SERVER "pool.ntp.org"
-#define GMT_OFFSET 25200  // GMT+7 (WIB) dalam detik
+#define GMT_OFFSET 25200
 #define DST_OFFSET 0
 
 // ==========================================
@@ -75,7 +71,6 @@ DHT dht(DHTPIN, DHTTYPE);
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 RTC_DS3231 rtc;
 
-// Firebase Objects (REST API untuk versi 2.2.x)
 WiFiClientSecure ssl_client;
 HTTPClient http;
 
@@ -87,32 +82,29 @@ bool statusPintu = false;
 bool manualKipas = false;
 bool manualSolenoid = false;
 
-// Alarm Flags
 bool alarmSuhuAktif = false;
 bool alarmHumidAktif = false;
 bool alarmPintuAktif = false;
-bool alarmSuhuSent = false;   // Mencegah spam alarm
+bool alarmSuhuSent = false;
 bool alarmHumidSent = false;
 bool alarmPintuSent = false;
 
-// Buzzer State
 bool buzzerMuted = false;
 bool buzzerActive = false;
 unsigned long buzzerStartTime = 0;
 
-// Timing (non-blocking)
+// Timing
 unsigned long lastSensorRead = 0;
 unsigned long lastDataSend = 0;
 unsigned long lastPintuCheck = 0;
 unsigned long lastOLEDUpdate = 0;
 unsigned long lastHeartbeat = 0;
+unsigned long lastKontrolPoll = 0;
 
 // Firebase state
 bool firebaseReady = false;
-bool streamStarted = false;
 bool wifiConnected = false;
 
-// Statistik koneksi
 unsigned long dataSuccessCount = 0;
 unsigned long dataFailCount = 0;
 
@@ -159,85 +151,68 @@ void initFirebase() {
 }
 
 // ==========================================
-// 📡 STREAM CALLBACK (Menerima kontrol dari web)
+// 📡 POLLING KONTROL (REST API GET)
 // ==========================================
-void streamCallback(FirebaseStream data) {
-  if (!data.jsonObject()) return;
+void pollKontrol() {
+  if (!firebaseReady || !wifiConnected) return;
 
-  FirebaseJson &json = *data.jsonObject();
+  String url = String(DATABASE_URL) + "/kontrol.json?auth=" + API_KEY;
+  http.begin(ssl_client, url);
+  int httpCode = http.GET();
 
-  Serial.println("📡 Stream event received");
+  if (httpCode == 200) {
+    String payload = http.getString();
+    Serial.println("📡 Kontrol diterima");
 
-  if (json.isMember("kipas")) {
-    int nilai = json.getInt("kipas");
-    manualKipas = (nilai == 1);
-    if (manualKipas) {
-      digitalWrite(RELAY_KIPAS, HIGH);
-      Serial.println("🌀 Kipas: MANUAL ON (dari web)");
-    } else {
-      if (suhu <= SUHU_MAX && kelembapan <= KELEMBAPAN_MAX) {
-        digitalWrite(RELAY_KIPAS, LOW);
-        Serial.println("🌀 Kipas: MATI (dari web)");
-      } else {
-        Serial.println("🌀 Kipas: tetap AUTO (kondisi melebihi batas)");
+    // Parse JSON sederhana
+    if (payload.indexOf("\"kipas\"") >= 0) {
+      int idx = payload.indexOf("\"kipas\":");
+      if (idx >= 0) {
+        int val = payload.substring(idx + 9, idx + 12).toInt();
+        manualKipas = (val == 1);
+        if (manualKipas) {
+          digitalWrite(RELAY_KIPAS, HIGH);
+          Serial.println("🌀 Kipas: MANUAL ON");
+        } else {
+          if (suhu <= SUHU_MAX && kelembapan <= KELEMBAPAN_MAX) {
+            digitalWrite(RELAY_KIPAS, LOW);
+            Serial.println("🌀 Kipas: MATI");
+          }
+        }
+      }
+    }
+
+    if (payload.indexOf("\"solenoid\"") >= 0) {
+      int idx = payload.indexOf("\"solenoid\":");
+      if (idx >= 0) {
+        int val = payload.substring(idx + 11, idx + 14).toInt();
+        manualSolenoid = (val == 1);
+        digitalWrite(RELAY_SOLENOID, val ? HIGH : LOW);
+        Serial.printf("🔒 Solenoid: %s\n", val ? "OPEN" : "LOCK");
+      }
+    }
+
+    if (payload.indexOf("\"buzzerMute\"") >= 0) {
+      int idx = payload.indexOf("\"buzzerMute\":");
+      if (idx >= 0) {
+        int val = payload.substring(idx + 13, idx + 16).toInt();
+        buzzerMuted = (val == 1);
+        if (buzzerMuted) {
+          digitalWrite(BUZZER_PIN, LOW);
+          buzzerActive = false;
+        }
       }
     }
   }
-
-  if (json.isMember("solenoid")) {
-    int nilai = json.getInt("solenoid");
-    manualSolenoid = (nilai == 1);
-    digitalWrite(RELAY_SOLENOID, nilai ? HIGH : LOW);
-    Serial.printf("🔒 Solenoid: %s (dari web)\n", manualSolenoid ? "TERBUKA" : "TERKUNCI");
-  }
-
-  if (json.isMember("buzzerMute")) {
-    int nilai = json.getInt("buzzerMute");
-    buzzerMuted = (nilai == 1);
-    if (buzzerMuted) {
-      digitalWrite(BUZZER_PIN, LOW);
-      buzzerActive = false;
-      Serial.println("🔕 Buzzer: MUTE AKTIF (dari web)");
-    } else {
-      Serial.println("🔊 Buzzer: MUTE DINONAKTIFKAN (dari web)");
-    }
-  }
-}
-
-void streamTimeoutCallback(bool timeout) {
-  if (timeout) {
-    Serial.println("⚠️ Firebase stream timeout!");
-  }
-}
-        buzzerActive = false;
-        Serial.println("🔕 Buzzer: MUTE AKTIF (dari web)");
-      } else {
-        Serial.println("🔊 Buzzer: MUTE DINONAKTIFKAN (dari web)");
-      }
-    }
-  }
+  http.end();
 }
 
 // ==========================================
-// 📡 START STREAM (Listen untuk kontrol)
-// ==========================================
-void startStream() {
-  if (!firebaseReady || streamStarted) return;
-
-  Serial.println("📡 Memulai stream kontrol...");
-  Firebase.beginStream(fbdo, "/kontrol");
-  fbdo.setStreamCallback(streamCallback, streamTimeoutCallback);
-  streamStarted = true;
-  Serial.println("✅ Stream kontrol aktif pada /kontrol");
-}
-
-// ==========================================
-// 🔊 PROCESS BUZZER (Unified Logic)
+// 🔊 PROCESS BUZZER
 // ==========================================
 void processBuzzer() {
   bool adaAlarm = alarmSuhuAktif || alarmHumidAktif || alarmPintuAktif;
 
-  // PRIORITAS 1: Jika MUTE aktif → Paksa BUZZER MATI total
   if (buzzerMuted) {
     if (buzzerActive) {
       digitalWrite(BUZZER_PIN, LOW);
@@ -246,22 +221,19 @@ void processBuzzer() {
     return;
   }
 
-  // PRIORITAS 2: Ada alarm & buzzer belum nyala → NYALAKAN
   if (adaAlarm && !buzzerActive) {
     digitalWrite(BUZZER_PIN, HIGH);
     buzzerActive = true;
     buzzerStartTime = millis();
-    Serial.println("🔔 BUZZER: ON (Alarm terdeteksi)");
+    Serial.println("🔔 BUZZER: ON");
   }
 
-  // PRIORITAS 3: Timeout 3 detik → MATIKAN
   if (buzzerActive && (millis() - buzzerStartTime >= BUZZER_DURATION)) {
     digitalWrite(BUZZER_PIN, LOW);
     buzzerActive = false;
-    Serial.println("🔇 BUZZER: OFF (Timeout 3 detik)");
+    Serial.println("🔇 BUZZER: OFF");
   }
 
-  // PRIORITAS 4: Alarm hilang → MATIKAN
   if (!adaAlarm && buzzerActive) {
     digitalWrite(BUZZER_PIN, LOW);
     buzzerActive = false;
@@ -269,7 +241,7 @@ void processBuzzer() {
 }
 
 // ==========================================
-// 🌡️ FUNGSI BACA SENSOR DHT22
+// 🌡️ BACA SENSOR DHT22
 // ==========================================
 void bacaSensor() {
   float bacaSuhu = NAN;
@@ -285,14 +257,13 @@ void bacaSensor() {
   }
 
   if (isnan(bacaSuhu) || isnan(bacaHumid)) {
-    Serial.println("⚠️ ERROR: Gagal baca DHT22 setelah retry");
+    Serial.println("⚠️ ERROR: DHT22 read failed");
     return;
   }
 
   suhu = bacaSuhu;
   kelembapan = bacaHumid;
 
-  // Kontrol Kipas Otomatis
   if (!manualKipas) {
     if (suhu > SUHU_MAX || kelembapan > KELEMBAPAN_MAX) {
       digitalWrite(RELAY_KIPAS, HIGH);
@@ -301,7 +272,6 @@ void bacaSensor() {
     }
   }
 
-  // Set Flag Alarm Suhu
   if (suhu > SUHU_MAX) {
     alarmSuhuAktif = true;
   } else {
@@ -309,7 +279,6 @@ void bacaSensor() {
     alarmSuhuSent = false;
   }
 
-  // Set Flag Alarm Kelembapan
   if (kelembapan > KELEMBAPAN_MAX) {
     alarmHumidAktif = true;
   } else {
@@ -319,7 +288,7 @@ void bacaSensor() {
 }
 
 // ==========================================
-// 🚪 FUNGSI CEK PINTU (Reed Switch)
+// 🚪 CEK PINTU
 // ==========================================
 void cekPintu() {
   bool bacaPintu = digitalRead(REED_PIN);
@@ -338,7 +307,7 @@ void cekPintu() {
 }
 
 // ==========================================
-// 📤 KIRIM DATA KE FIREBASE
+// 📤 KIRIM DATA KE FIREBASE (REST API POST)
 // ==========================================
 void kirimDataFirebase() {
   if (!firebaseReady || !wifiConnected) return;
@@ -361,100 +330,106 @@ void kirimDataFirebase() {
   char waktu[9];
   snprintf(waktu, sizeof(waktu), "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
 
-  String realtimeJson;
-  realtimeJson.reserve(512);
-  realtimeJson += "{";
+  // Buat JSON payload
+  String realtimeJson = "{";
   realtimeJson += "\"suhu\":" + String(suhu, 1) + ",";
   realtimeJson += "\"kelembapan\":" + String(kelembapan, 1) + ",";
   realtimeJson += "\"pintu\":" + String(statusPintu ? "true" : "false") + ",";
-  realtimeJson += "\"kipas\":" + String(digitalRead(RELAY_KIPAS) == HIGH ? "true" : "false") + ",";
-  realtimeJson += "\"solenoid\":" + String(digitalRead(RELAY_SOLENOID) == HIGH ? "true" : "false") + ",";
-  realtimeJson += "\"buzzerMuted\":" + String(buzzerMuted ? "true" : "false") + ",";
-  realtimeJson += "\"buzzerActive\":" + String(buzzerActive ? "true" : "false") + ",";
-  realtimeJson += "\"manualKipas\":" + String(manualKipas ? "true" : "false") + ",";
   realtimeJson += "\"timestamp\":" + String(timestamp) + ",";
   realtimeJson += "\"tanggal\":\"" + String(tanggal) + "\",";
-  realtimeJson += "\"waktu\":\"" + String(waktu) + "\",";
-  realtimeJson += "\"alarmSuhu\":" + String(alarmSuhuAktif ? "true" : "false") + ",";
-  realtimeJson += "\"alarmKelembapan\":" + String(alarmHumidAktif ? "true" : "false") + ",";
-  realtimeJson += "\"alarmPintu\":" + String(alarmPintuAktif ? "true" : "false") + ",";
-  realtimeJson += "\"rssi\":" + String(WiFi.RSSI()) + ",";
-  realtimeJson += "\"uptime\":" + String(millis() / 1000);
+  realtimeJson += "\"waktu\":\"" + String(waktu) + "\"";
   realtimeJson += "}";
 
-  bool setOk = Firebase.setJSON(fbdo, "/realtime", realtimeJson);
-  if (setOk) {
+  // Set realtime data
+  String setUrl = String(DATABASE_URL) + "/realtime.json?auth=" + API_KEY;
+  http.begin(ssl_client, setUrl);
+  http.addHeader("Content-Type", "application/json");
+  int httpCode = http.PUT(realtimeJson);
+  
+  if (httpCode == 200) {
     dataSuccessCount++;
-    Serial.println("  ✅ Realtime data terkirim");
+    Serial.println("  ✅ Realtime data sent");
   } else {
     dataFailCount++;
-    Serial.println("  ❌ Gagal kirim realtime data");
+    Serial.println("  ❌ Failed to send realtime");
   }
+  http.end();
 
-  // ---- 2. Push data historis (append) ----
+  // Push log
   String logJson = "{";
   logJson += "\"suhu\":" + String(suhu, 1) + ",";
   logJson += "\"kelembapan\":" + String(kelembapan, 1) + ",";
-  logJson += "\"pintu\":" + String(statusPintu ? "true" : "false") + ",";
-  logJson += "\"kipas\":" + String(digitalRead(RELAY_KIPAS) == HIGH ? "true" : "false") + ",";
-  logJson += "\"timestamp\":" + String(timestamp) + ",";
-  logJson += "\"tanggal\":\"" + String(tanggal) + "\",";
-  logJson += "\"waktu\":\"" + String(waktu) + "\"";
+  logJson += "\"timestamp\":" + String(timestamp);
   logJson += "}";
 
-  String pushResult = Firebase.pushJSON(fbdo, "/log", logJson);
-  if (fbdo.httpCode() == FIREBASE_HTTP_CODE_OK) {
-    Serial.println("  ✅ Log historis tersimpan");
+  String pushUrl = String(DATABASE_URL) + "/log.json?auth=" + API_KEY;
+  http.begin(ssl_client, pushUrl);
+  http.addHeader("Content-Type", "application/json");
+  httpCode = http.POST(logJson);
+  
+  if (httpCode == 200) {
+    Serial.println("  ✅ Log saved");
   } else {
-    Serial.println("  ❌ Gagal simpan log historis");
+    Serial.println("  ❌ Failed to save log");
   }
+  http.end();
 
-  // ---- 3. Kirim alarm jika ada (hanya sekali per event) ----
+  // Kirim alarm
   if (alarmSuhuAktif && !alarmSuhuSent) {
     String alarmJson = "{";
     alarmJson += "\"tipe\":\"suhu_tinggi\",";
-    alarmJson += "\"pesan\":\"PERINGATAN! Suhu: " + String(suhu, 1) + "°C\",";
     alarmJson += "\"nilai\":" + String(suhu, 1) + ",";
-    alarmJson += "\"batas\":" + String(SUHU_MAX, 1) + ",";
-    alarmJson += "\"timestamp\":" + String(timestamp) + ",";
-    alarmJson += "\"dibaca\":false";
+    alarmJson += "\"timestamp\":" + String(timestamp);
     alarmJson += "}";
-    Firebase.pushJSON(fbdo, "/alarm", alarmJson);
+
+    String alarmUrl = String(DATABASE_URL) + "/alarm.json?auth=" + API_KEY;
+    http.begin(ssl_client, alarmUrl);
+    http.addHeader("Content-Type", "application/json");
+    http.POST(alarmJson);
+    http.end();
+    
     alarmSuhuSent = true;
-    Serial.println("  🚨 Alarm suhu tinggi terkirim!");
+    Serial.println("  🚨 Alarm suhu sent!");
   }
 
   if (alarmHumidAktif && !alarmHumidSent) {
     String alarmJson = "{";
     alarmJson += "\"tipe\":\"kelembapan_tinggi\",";
-    alarmJson += "\"pesan\":\"PERINGATAN! Kelembapan: " + String(kelembapan, 1) + "%\",";
     alarmJson += "\"nilai\":" + String(kelembapan, 1) + ",";
-    alarmJson += "\"batas\":" + String(KELEMBAPAN_MAX, 1) + ",";
-    alarmJson += "\"timestamp\":" + String(timestamp) + ",";
-    alarmJson += "\"dibaca\":false";
+    alarmJson += "\"timestamp\":" + String(timestamp);
     alarmJson += "}";
-    Firebase.pushJSON(fbdo, "/alarm", alarmJson);
+
+    String alarmUrl = String(DATABASE_URL) + "/alarm.json?auth=" + API_KEY;
+    http.begin(ssl_client, alarmUrl);
+    http.addHeader("Content-Type", "application/json");
+    http.POST(alarmJson);
+    http.end();
+    
     alarmHumidSent = true;
-    Serial.println("  🚨 Alarm kelembapan tinggi terkirim!");
+    Serial.println("  🚨 Alarm humidity sent!");
   }
 
   if (alarmPintuAktif && !alarmPintuSent) {
     String alarmJson = "{";
     alarmJson += "\"tipe\":\"pintu_terbuka\",";
-    alarmJson += "\"pesan\":\"PERINGATAN! Pintu kontainer terbuka!\",";
-    alarmJson += "\"timestamp\":" + String(timestamp) + ",";
-    alarmJson += "\"dibaca\":false";
+    alarmJson += "\"timestamp\":" + String(timestamp);
     alarmJson += "}";
-    Firebase.pushJSON(fbdo, "/alarm", alarmJson);
+
+    String alarmUrl = String(DATABASE_URL) + "/alarm.json?auth=" + API_KEY;
+    http.begin(ssl_client, alarmUrl);
+    http.addHeader("Content-Type", "application/json");
+    http.POST(alarmJson);
+    http.end();
+    
     alarmPintuSent = true;
-    Serial.println("  🚨 Alarm pintu terbuka terkirim!");
+    Serial.println("  🚨 Alarm door sent!");
   }
 
-  Serial.printf("📊 Statistik: %lu sukses, %lu gagal\n", dataSuccessCount, dataFailCount);
+  Serial.printf("📊 Stats: %lu success, %lu failed\n", dataSuccessCount, dataFailCount);
 }
 
 // ==========================================
-// 💓 HEARTBEAT (Cek koneksi & status)
+// 💓 HEARTBEAT
 // ==========================================
 void sendHeartbeat() {
   if (!firebaseReady || !wifiConnected) return;
@@ -468,22 +443,21 @@ void sendHeartbeat() {
     timestamp = (unsigned long)t;
   }
 
-  String heartbeatJson;
-  heartbeatJson.reserve(256);
-  heartbeatJson += "{";
+  String heartbeatJson = "{";
   heartbeatJson += "\"online\":true,";
   heartbeatJson += "\"rssi\":" + String(WiFi.RSSI()) + ",";
-  heartbeatJson += "\"uptime\":" + String(millis() / 1000) + ",";
-  heartbeatJson += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
-  heartbeatJson += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
   heartbeatJson += "\"timestamp\":" + String(timestamp);
   heartbeatJson += "}";
 
-  Firebase.setJSON(fbdo, "/status", heartbeatJson);
+  String statusUrl = String(DATABASE_URL) + "/status.json?auth=" + API_KEY;
+  http.begin(ssl_client, statusUrl);
+  http.addHeader("Content-Type", "application/json");
+  http.PUT(heartbeatJson);
+  http.end();
 }
 
 // ==========================================
-// 📺 FUNGSI UPDATE OLED
+// 📺 UPDATE OLED
 // ==========================================
 void updateOLED() {
   DateTime now = rtc.now();
@@ -492,57 +466,26 @@ void updateOLED() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // Baris 1: Waktu & Tanggal
   display.setCursor(0, 0);
-  display.printf("%02d:%02d:%02d %02d/%02d/%04d",
-    now.hour(), now.minute(), now.second(),
-    now.day(), now.month(), now.year());
+  display.printf("%02d:%02d:%02d %02d/%02d", now.hour(), now.minute(), now.second(), now.day(), now.month());
 
-  // Baris 2: Suhu
   display.setCursor(0, 14);
-  display.print("Suhu    : ");
+  display.print("T: ");
   display.print(suhu, 1);
-  display.print(" C");
-  if (suhu > SUHU_MAX) display.print(" *");
+  display.print("C");
 
-  // Baris 3: Kelembapan
   display.setCursor(0, 26);
-  display.print("Humidity: ");
+  display.print("H: ");
   display.print(kelembapan, 1);
-  display.print(" %");
-  if (kelembapan > KELEMBAPAN_MAX) display.print(" *");
+  display.print("%");
 
-  // Baris 4: Status Pintu
   display.setCursor(0, 38);
-  display.print("Pintu   : ");
-  if (statusPintu) {
-    display.setTextColor(SSD1306_BLACK);
-    display.fillRect(58, 38, 50, 8, SSD1306_WHITE);
-    display.setCursor(58, 38);
-    display.print("BUKA!");
-    display.setTextColor(SSD1306_WHITE);
-  } else {
-    display.print("TERTUTUP");
-  }
+  display.print("Door: ");
+  display.print(statusPintu ? "OPEN" : "CLOSED");
 
-  // Baris 5: Status Buzzer + WiFi
   display.setCursor(0, 50);
-  if (buzzerMuted) {
-    display.print("Bzr:MUTE");
-  } else if (buzzerActive) {
-    display.print("Bzr:AKTF");
-  } else {
-    display.print("Bzr:Siap");
-  }
-
-  // WiFi indicator di kanan bawah
-  display.setCursor(72, 50);
-  if (wifiConnected) {
-    display.print("WiFi:");
-    display.print(WiFi.RSSI());
-  } else {
-    display.print("WiFi:OFF");
-  }
+  display.print("WiFi: ");
+  display.print(wifiConnected ? "OK" : "OFF");
 
   display.display();
 }
@@ -555,11 +498,10 @@ void setup() {
   delay(1000);
   Serial.println();
   Serial.println("==========================================");
-  Serial.println("  🏗️ SISTEM MONITORING KONTAINER v2.0");
-  Serial.println("  Firebase Realtime Database Edition");
+  Serial.println("  🏗️ MONITORING v2.0 - REST API Edition");
   Serial.println("==========================================");
 
-  // ---- Setup Pin ----
+  // Setup Pin
   pinMode(REED_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(RELAY_KIPAS, OUTPUT);
@@ -569,44 +511,40 @@ void setup() {
   digitalWrite(RELAY_SOLENOID, LOW);
   digitalWrite(BUZZER_PIN, LOW);
 
-  // ---- Setup DHT22 ----
+  // Setup DHT22
   dht.begin();
 
-  // ---- Setup I2C & OLED ----
+  // Setup I2C & OLED
   Wire.begin(21, 22);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("❌ ERROR: OLED tidak ditemukan!");
-    // Lanjut tanpa OLED (jangan hang)
+    Serial.println("❌ OLED not found!");
   } else {
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
-    display.setCursor(0, 10);
-    display.println("  Monitoring v2.0");
     display.setCursor(0, 25);
-    display.println("  Firebase Edition");
+    display.println("  Monitoring v2.0");
     display.setCursor(0, 45);
-    display.println("  Menghubungkan...");
+    display.println("  Connecting...");
     display.display();
-    Serial.println("✅ OLED aktif");
+    Serial.println("✅ OLED active");
   }
 
-  // ---- Setup RTC ----
+  // Setup RTC
   if (!rtc.begin()) {
-    Serial.println("⚠️ RTC tidak ditemukan! Menggunakan NTP.");
+    Serial.println("⚠️ RTC not found!");
   } else {
-    Serial.println("✅ RTC DS3231 aktif");
+    Serial.println("✅ RTC active");
   }
 
-  // ---- Koneksi WiFi ----
+  // WiFi
   connectWiFi();
 
-  // ---- Setup NTP ----
+  // NTP
   if (wifiConnected) {
     configTime(GMT_OFFSET, DST_OFFSET, NTP_SERVER);
-    Serial.print("✅ NTP time sync dimulai");
-
+    Serial.print("✅ NTP sync starting");
     time_t now = time(nullptr);
     int tries = 0;
     while (now < 1609459200 && tries < 30) {
@@ -615,29 +553,13 @@ void setup() {
       now = time(nullptr);
       tries++;
     }
-
-    if (now >= 1609459200) {
-      Serial.println("\n✅ NTP time sync berhasil");
-    } else {
-      Serial.println("\n⚠️ NTP time sync gagal, menggunakan RTC jika tersedia");
-    }
+    Serial.println(now >= 1609459200 ? "\n✅ NTP done" : "\n⚠️ NTP failed");
   }
 
-  // ---- Inisialisasi Firebase ----
+  // Firebase
   if (wifiConnected) {
     initFirebase();
-    startStream();
-
-    // Kirim status awal
     sendHeartbeat();
-
-    // Set konfigurasi default di Firebase
-    String configJson = "{";
-    configJson += "\"suhuMax\":" + String(SUHU_MAX, 1) + ",";
-    configJson += "\"kelembapanMax\":" + String(KELEMBAPAN_MAX, 1) + ",";
-    configJson += "\"intervalKirim\":" + String(INTERVAL_KIRIM / 1000);
-    configJson += "}";
-    Firebase.setJSON(fbdo, "/config", configJson);
   }
 
   Serial.println("==========================================");
@@ -651,60 +573,60 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
 
-  // ---- Firebase maintenance ----
-  Firebase.reconnectNetwork(true);
-
-  // ---- Check WiFi connection ----
+  // Check WiFi
   if (WiFi.status() != WL_CONNECTED) {
     if (wifiConnected) {
       wifiConnected = false;
-      Serial.println("⚠️ WiFi terputus! Mencoba reconnect...");
+      Serial.println("⚠️ WiFi disconnected!");
     }
-    // Coba reconnect setiap 30 detik
     static unsigned long lastReconnect = 0;
     if (currentMillis - lastReconnect >= 30000) {
       lastReconnect = currentMillis;
       connectWiFi();
-      if (wifiConnected) {
-        initFirebase();
-        startStream();
-      }
     }
   } else if (!wifiConnected) {
     wifiConnected = true;
-    Serial.println("✅ WiFi terhubung kembali!");
+    Serial.println("✅ WiFi reconnected!");
   }
 
-  // ---- Baca Sensor (setiap 2 detik) ----
+  // Sensor
   if (currentMillis - lastSensorRead >= INTERVAL_SENSOR) {
     lastSensorRead = currentMillis;
     bacaSensor();
   }
 
-  // ---- Cek Pintu (setiap 300ms) ----
+  // Door
   if (currentMillis - lastPintuCheck >= INTERVAL_PINTU) {
     lastPintuCheck = currentMillis;
     cekPintu();
   }
 
-  // ---- Kirim Data ke Firebase (setiap 15 detik) ----
+  // Send data
   if (currentMillis - lastDataSend >= INTERVAL_KIRIM) {
     lastDataSend = currentMillis;
     kirimDataFirebase();
   }
 
-  // ---- Update OLED (setiap 1 detik) ----
+  // Poll kontrol
+  if (currentMillis - lastKontrolPoll >= INTERVAL_KONTROL) {
+    lastKontrolPoll = currentMillis;
+    pollKontrol();
+  }
+
+  // OLED
   if (currentMillis - lastOLEDUpdate >= INTERVAL_OLED) {
     lastOLEDUpdate = currentMillis;
     updateOLED();
   }
 
-  // ---- Heartbeat (setiap 1 menit) ----
+  // Heartbeat
   if (currentMillis - lastHeartbeat >= INTERVAL_HEARTBEAT) {
     lastHeartbeat = currentMillis;
     sendHeartbeat();
   }
 
-  // ---- Process Buzzer (setiap loop, non-blocking) ----
+  // Buzzer
   processBuzzer();
+
+  delay(10);
 }

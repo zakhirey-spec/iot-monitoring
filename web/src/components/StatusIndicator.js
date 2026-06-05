@@ -5,30 +5,28 @@ import { subscribeStatus } from "@/lib/firebase";
 export default function StatusIndicator() {
   const [status, setStatus] = useState(null);
   const [isOnline, setIsOnline] = useState(false);
+  const [lastUpdateMs, setLastUpdateMs] = useState(Date.now());
 
   useEffect(() => {
     const unsubscribe = subscribeStatus((data) => {
       setStatus(data);
-      if (data && data.uptime) {
-        // If data was updated recently (within 2 minutes), consider online
-        // For simplicity, we just check if data exists and is updating
-        // The real heartbeat is every 60s
-        setIsOnline(data.online);
-      } else {
-        setIsOnline(false);
-      }
+      setLastUpdateMs(Date.now());
+      setIsOnline(true);
     });
-
-    // Timeout logic: if no new heartbeat in 90 seconds, mark offline
-    const interval = setInterval(() => {
-      // In a real app, you'd compare data.timestamp with Date.now()
-    }, 10000);
 
     return () => {
       unsubscribe();
-      clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const online = Date.now() - lastUpdateMs < 90000;
+      setIsOnline(online);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [lastUpdateMs]);
 
   return (
     <div className="status-indicator">
