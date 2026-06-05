@@ -363,39 +363,65 @@ void bacaSensor() {
 // 🚪 FUNGSI CEK PINTU (Reed Switch)
 // ==========================================
 void cekPintu() {
-  bool bacaPintu = digitalRead(REED_PIN);
+  // Dengan INPUT_PULLUP: LOW = magnet menempel (TUTUP), HIGH = magnet lepas (BUKA)
+  bool bacaPintu = (digitalRead(REED_PIN) == HIGH);
 
-  // Jika hardware membaca HIGH -> PINTU TERBUKA (Magnet merenggang)
-  if (bacaPintu == HIGH) {
-    if (!statusPintu) {
-      statusPintu = true;
-      alarmPintuAktif = true;
-      Serial.println("🚪 PINTU: TERBUKA");
-    }
-    
-    // Buzzer hidup terus selama pintu terbuka (kecuali dimatikan manual dari web)
-    if (!buzzerMuted) {
-      digitalWrite(BUZZER_PIN, HIGH);
-      buzzerActive = true;
-      // Reset timer terus-menerus agar processBuzzer() tidak mematikan buzzer setelah 3 detik
-      buzzerStartTime = millis(); 
-    }
-  }
-  // Jika hardware membaca LOW -> PINTU TERTUTUP (Magnet menempel)
-  else if (bacaPintu == LOW) {
+  if (bacaPintu != statusPintu) {  // Hanya proses jika ada perubahan
+    statusPintu = bacaPintu;
+
     if (statusPintu) {
-      statusPintu = false;
+      // Pintu BARU SAJA terbuka
+      alarmPintuAktif = true;
+      alarmPintuSent = false;
+      Serial.println("🚪 PINTU: TERBUKA");
+    } else {
+      // Pintu BARU SAJA tertutup
       alarmPintuAktif = false;
       alarmPintuSent = false;
-      
-      // Saat magnet menempel, matikan buzzer secara otomatis
       digitalWrite(BUZZER_PIN, LOW);
       buzzerActive = false;
-      
-      Serial.println("🚪 PINTU: TERTUTUP (Buzzer dimatikan otomatis)");
+      Serial.println("🚪 PINTU: TERTUTUP");
     }
   }
+
+  // Jaga buzzer tetap ON selama pintu masih terbuka
+  if (statusPintu && !buzzerMuted) {
+    if (!buzzerActive) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      buzzerActive = true;
+    }
+    buzzerStartTime = millis();  // Reset timer agar processBuzzer() tidak matiin
+  }
 }
+  // Dengan INPUT_PULLUP: LOW = magnet menempel (TUTUP), HIGH = magnet lepas (BUKA)
+  bool bacaPintu = (digitalRead(REED_PIN) == HIGH);
+
+  if (bacaPintu != statusPintu) {  // Hanya proses jika ada perubahan
+    statusPintu = bacaPintu;
+
+    if (statusPintu) {
+      // Pintu BARU SAJA terbuka
+      alarmPintuAktif = true;
+      alarmPintuSent = false;
+      Serial.println("🚪 PINTU: TERBUKA");
+    } else {
+      // Pintu BARU SAJA tertutup
+      alarmPintuAktif = false;
+      alarmPintuSent = false;
+      digitalWrite(BUZZER_PIN, LOW);
+      buzzerActive = false;
+      Serial.println("🚪 PINTU: TERTUTUP");
+    }
+  }
+
+  // Jaga buzzer tetap ON selama pintu masih terbuka
+  if (statusPintu && !buzzerMuted) {
+    if (!buzzerActive) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      buzzerActive = true;
+    }
+    buzzerStartTime = millis();  // Reset timer agar processBuzzer() tidak matiin
+  }
 
 // ==========================================
 // 📤 KIRIM DATA KE FIREBASE
