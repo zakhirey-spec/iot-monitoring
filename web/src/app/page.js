@@ -1,135 +1,266 @@
-"use client";
-import { useEffect, useState } from "react";
-import { subscribeRealtime, subscribeKontrol } from "@/lib/firebase";
-import StatusIndicator from "@/components/StatusIndicator";
-import StatusCard from "@/components/StatusCard";
-import GaugeChart from "@/components/GaugeChart";
-import PintuStatus from "@/components/PintuStatus";
-import KontrolPanel from "@/components/KontrolPanel";
-import AlertPanel from "@/components/AlertPanel";
+'use client';
 
-export default function Dashboard() {
-  const [data, setData] = useState({
-    suhu: 0,
-    kelembapan: 0,
-    pintu: false,
-    kipas: false,
-    buzzerActive: false,
-    timestamp: 0,
-    waktu: "--:--:--"
-  });
+import { useEffect, useState } from 'react';
+import styles from './page.module.css';
+import {
+  subscribeRealtime,
+  subscribeStatus,
+  subscribeKontrol,
+  setKontrolKipas,
+  setKontrolSolenoid,
+  setKontrolBuzzerMute,
+  subscribeLogHistory,
+  subscribeAlarms,
+  markAlarmAsRead
+} from '../lib/firebase';
 
-  const [kontrol, setKontrol] = useState({
-    kipas: 0,
-    solenoid: 0,
-    buzzerMute: 0,
-  });
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
 
-  const [loading, setLoading] = useState(true);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+
+export default function Home() {
+  const [realtime, setRealtime] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [kontrol, setKontrol] = useState({ kipas: false, solenoid: false, buzzerMute: false });
+  const [logs, setLogs] = useState([]);
+  const [alarms, setAlarms] = useState([]);
 
   useEffect(() => {
-    const unsubRealtime = subscribeRealtime((realtimeData) => {
-      if (realtimeData) setData(realtimeData);
-      setLoading(false);
-    });
-
-    const unsubKontrol = subscribeKontrol((kontrolData) => {
-      if (kontrolData) setKontrol(kontrolData);
-    });
+    const unsubRealtime = subscribeRealtime((data) => setRealtime(data));
+    const unsubStatus = subscribeStatus((data) => setStatus(data));
+    const unsubKontrol = subscribeKontrol((data) => setKontrol(data));
+    const unsubLogs = subscribeLogHistory(50, (data) => setLogs(data));
+    const unsubAlarms = subscribeAlarms(20, (data) => setAlarms(data));
 
     return () => {
       unsubRealtime();
+      unsubStatus();
       unsubKontrol();
+      unsubLogs();
+      unsubAlarms();
     };
   }, []);
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%" }}>
-        <div className="spinner"></div>
-      </div>
-    );
-  }
+  if (!realtime) return <div className={styles.dashboard} style={{color: 'white', textAlign: 'center', marginTop: '5rem'}}>Connecting to Industrial System...</div>;
 
-  const suhuStatus = data.suhu > 30 ? "danger" : (data.suhu > 28 ? "warning" : "normal");
-  const humidStatus = data.kelembapan > 80 ? "danger" : (data.kelembapan > 75 ? "warning" : "normal");
+  const isOnline = status?.online && (Date.now() - status.timestamp < 120000); // 2 mins timeout
+  const tempWarning = realtime.suhu > 30;
+  const humidWarning = realtime.kelembapan > 80;
+  const doorOpen = realtime.pintu;
+
+  // Chart Data Preparation
+  const chartData = {
+    labels: logs.map(l => l.waktu).slice(-20), // Last 20 logs
+    datasets: [
+      {
+        label: 'Suhu (°C)',
+        data: logs.map(l => l.suhu).slice(-20),
+        borderColor: '#ef4444',
+        backgroundColor: 'rgba(239, 68, 68, 0.5)',
+        yAxisID: 'y',
+        tension: 0.3
+      },
+      {
+        label: 'Kelembapan (%)',
+        data: logs.map(l => l.kelembapan).slice(-20),
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+        yAxisID: 'y1',
+        tension: 0.3
+      }
+    ]
+  };
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { labels: { color: '#94a3b8' } }
+    },
+    scales: {
+      x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+      y: { type: 'linear', display: true, position: 'left', ticks: { color: '#ef4444' }, grid: { color: '#334155' } },
+      y1: { type: 'linear', display: true, position: 'right', ticks: { color: '#3b82f6' }, grid: { drawOnChartArea: false } }
+    }
+  };
 
   return (
-    <div className="animate-fade-in">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Monitoring Dashboard</h1>
-          <p className="subtitle">Update terakhir: {data.waktu} WIB</p>
+    <div className={styles.dashboard}>
+      {/* Header */}
+      <div className={styles.header}>
+        <div className={styles.title}>Industrial Monitoring SCADA</div>
+        <div className={styles.statusIndicator}>
+          <div className={`${styles.dot} ${isOnline ? styles.online : styles.offline}`}></div>
+          {isOnline ? `ONLINE - IP: ${status.ip || '-'}` : 'OFFLINE'}
         </div>
-        <StatusIndicator />
       </div>
 
-      {/* Top Metrics Cards */}
-      <div className="grid-cards">
-        <StatusCard
-          title="Suhu Kontainer"
-          value={data.suhu.toFixed(1)}
-          unit="°C"
-          icon="🌡️"
-          color={suhuStatus === "danger" ? "red" : (suhuStatus === "warning" ? "orange" : "blue")}
-          status={suhuStatus}
-        />
-        <StatusCard
-          title="Kelembapan"
-          value={data.kelembapan.toFixed(1)}
-          unit="%"
-          icon="💧"
-          color={humidStatus === "danger" ? "red" : (humidStatus === "warning" ? "orange" : "blue")}
-          status={humidStatus}
-        />
-        <StatusCard
-          title="Sistem Pendingin"
-          value={data.kipas ? "AKTIF" : "MATI"}
-          unit=""
-          icon="🌀"
-          color="blue"
-        />
-      </div>
+      {/* Cards Grid */}
+      <div className={styles.gridCards}>
+        <div className={`${styles.card} ${tempWarning ? styles.danger : styles.normal}`}>
+          <div className={styles.cardTitle}>Suhu Ruangan</div>
+          <div className={styles.cardValue}>{realtime.suhu?.toFixed(1)} <span className={styles.cardUnit}>°C</span></div>
+        </div>
+        
+        <div className={`${styles.card} ${humidWarning ? styles.warning : styles.normal}`}>
+          <div className={styles.cardTitle}>Kelembapan</div>
+          <div className={styles.cardValue}>{realtime.kelembapan?.toFixed(1)} <span className={styles.cardUnit}>%</span></div>
+        </div>
 
-      <div className="grid-charts">
-        {/* Main Content Area */}
-        <div className="card glass">
-          <h3 style={{ fontSize: "1.1rem", marginBottom: "1.5rem" }}>Visualisasi Real-time</h3>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "2rem" }}>
-            <GaugeChart
-              title="Suhu Udara"
-              value={data.suhu}
-              min={0} max={50} unit="°C"
-              color={suhuStatus === "danger" ? "#EF4444" : (suhuStatus === "warning" ? "#F59E0B" : "#3B82F6")}
-            />
-            <GaugeChart
-              title="Kelembapan"
-              value={data.kelembapan}
-              min={0} max={100} unit="%"
-              color={humidStatus === "danger" ? "#EF4444" : (humidStatus === "warning" ? "#F59E0B" : "#10B981")}
-            />
-            <PintuStatus isOpen={data.pintu} />
-          </div>
-
-          <div style={{ marginTop: "2rem", paddingTop: "1.5rem", borderTop: "1px solid var(--border-light)", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-            <div className={`badge ${data.buzzerActive ? 'badge-danger' : 'badge-neutral'}`}>
-              Buzzer: {data.buzzerActive ? "BUNYI" : "SIAP"}
-            </div>
-            <div className={`badge ${kontrol.buzzerMute ? 'badge-warning' : 'badge-neutral'}`}>
-              Mute: {kontrol.buzzerMute ? "AKTIF" : "OFF"}
-            </div>
+        <div className={`${styles.card} ${doorOpen ? styles.danger : styles.normal}`}>
+          <div className={styles.cardTitle}>Status Pintu</div>
+          <div className={styles.cardValue} style={{ color: doorOpen ? '#ef4444' : '#22c55e' }}>
+            {doorOpen ? 'TERBUKA' : 'TERKUNCI'}
           </div>
         </div>
 
-        {/* Side Panel (Alerts) */}
-        <AlertPanel />
+        <div className={`${styles.card} ${styles.normal}`}>
+          <div className={styles.cardTitle}>Status Hardware</div>
+          <div style={{ marginTop: '10px', fontSize: '0.9rem', color: '#94a3b8', lineHeight: '1.8' }}>
+            <div>Kipas: <span className={`badge ${realtime.kipas ? 'green' : 'red'}`}>{realtime.kipas ? 'ON' : 'OFF'}</span></div>
+            <div>Solenoid: <span className={`badge ${realtime.solenoid ? 'green' : 'red'}`}>{realtime.solenoid ? 'OPEN' : 'LOCKED'}</span></div>
+          </div>
+        </div>
       </div>
 
       {/* Control Panel */}
-      <div style={{ maxWidth: "800px" }}>
-        <KontrolPanel data={kontrol} />
+      <div className={styles.controlPanel}>
+        <div className={styles.controlHeader}>Control Panel (Manual Override)</div>
+        <div className={styles.controlGrid}>
+          
+          <div className={styles.controlItem}>
+            <div className={styles.controlLabel}>Force Kipas ON</div>
+            <label className={styles.switch}>
+              <input 
+                type="checkbox" 
+                checked={kontrol.kipas === 1 || kontrol.kipas === true}
+                onChange={(e) => setKontrolKipas(e.target.checked ? 1 : 0)} 
+              />
+              <span className={styles.slider}></span>
+            </label>
+          </div>
+
+          <div className={styles.controlItem}>
+            <div className={styles.controlLabel}>Buka Kunci Solenoid</div>
+            <label className={styles.switch}>
+              <input 
+                type="checkbox" 
+                checked={kontrol.solenoid === 1 || kontrol.solenoid === true}
+                onChange={(e) => setKontrolSolenoid(e.target.checked ? 1 : 0)} 
+              />
+              <span className={styles.slider}></span>
+            </label>
+          </div>
+
+          <div className={styles.controlItem}>
+            <div className={styles.controlLabel}>Mute Alarm Buzzer</div>
+            <label className={styles.switch}>
+              <input 
+                type="checkbox" 
+                checked={kontrol.buzzerMute === 1 || kontrol.buzzerMute === true}
+                onChange={(e) => setKontrolBuzzerMute(e.target.checked ? 1 : 0)} 
+              />
+              <span className={styles.slider}></span>
+            </label>
+          </div>
+
+        </div>
       </div>
+
+      {/* Chart Area */}
+      <div className={styles.chartsContainer}>
+        <div className={styles.controlHeader}>Trend Riwayat Sensor</div>
+        <div className={styles.chartWrapper}>
+          <Line data={chartData} options={chartOptions} />
+        </div>
+      </div>
+
+      {/* Tables Area */}
+      <div className={styles.tablesContainer}>
+        
+        {/* Alarms Table */}
+        <div className={styles.tableBox}>
+          <div className={styles.tableTitle}>Daftar Peringatan (Alarm)</div>
+          <table className={styles.dataTable}>
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Pesan</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alarms.map(alarm => {
+                const date = new Date(alarm.timestamp * 1000).toLocaleString('id-ID');
+                return (
+                  <tr key={alarm.id} style={{ opacity: alarm.dibaca ? 0.6 : 1 }}>
+                    <td>{date}</td>
+                    <td style={{ color: alarm.tipe === 'pintu_terbuka' || alarm.tipe === 'suhu_tinggi' ? '#ef4444' : '#eab308' }}>
+                      {alarm.pesan}
+                    </td>
+                    <td>
+                      {!alarm.dibaca ? (
+                        <button 
+                          onClick={() => markAlarmAsRead(alarm.id)}
+                          style={{ padding: '4px 8px', background: '#334155', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem' }}
+                        >
+                          Tandai Dibaca
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.8rem', color: '#22c55e' }}>Selesai</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {alarms.length === 0 && <tr><td colSpan="3" style={{ textAlign: 'center' }}>Tidak ada alarm.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Logs Table */}
+        <div className={styles.tableBox}>
+          <div className={styles.tableTitle}>Log Data Signifikan</div>
+          <table className={styles.dataTable}>
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Suhu</th>
+                <th>Humid</th>
+                <th>Pintu</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...logs].reverse().slice(0, 15).map(log => (
+                <tr key={log.id}>
+                  <td>{log.waktu}</td>
+                  <td>{log.suhu?.toFixed(1)}°C</td>
+                  <td>{log.kelembapan?.toFixed(1)}%</td>
+                  <td>
+                    <span className={`badge ${log.pintu ? 'red' : 'green'}`}>
+                      {log.pintu ? 'BUKA' : 'KUNCI'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {logs.length === 0 && <tr><td colSpan="4" style={{ textAlign: 'center' }}>Belum ada data log.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
     </div>
   );
 }

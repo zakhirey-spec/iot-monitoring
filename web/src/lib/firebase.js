@@ -74,10 +74,6 @@ export function subscribeRealtime(callback) {
     (snapshot) => {
       const rawData = snapshot.val();
       const data = { ...DEFAULT_REALTIME, ...(rawData || {}) };
-      // SWAP data kipas dan solenoid karena pemasangan hardware tertukar
-      const tempKipas = data.kipas;
-      data.kipas = data.solenoid;
-      data.solenoid = tempKipas;
       callback(data);
     },
     (error) => {
@@ -145,10 +141,6 @@ export function subscribeKontrol(callback) {
     (snapshot) => {
       const rawData = snapshot.val();
       const data = { kipas: 0, solenoid: 0, buzzerMute: 0, ...(rawData || {}) };
-      // SWAP data kipas dan solenoid
-      const tempKipas = data.kipas;
-      data.kipas = data.solenoid;
-      data.solenoid = tempKipas;
       callback(data);
     },
     (error) => {
@@ -163,8 +155,7 @@ export async function setKontrolKipas(value) {
   if (!database) {
     throw new Error('Firebase database not initialized');
   }
-  // SWAP target: mengarah ke solenoid karena hardware tertukar
-  const kontrolRef = ref(database, "kontrol/solenoid");
+  const kontrolRef = ref(database, "kontrol/kipas");
   await set(kontrolRef, value);
 }
 
@@ -172,8 +163,7 @@ export async function setKontrolSolenoid(value) {
   if (!database) {
     throw new Error('Firebase database not initialized');
   }
-  // SWAP target: mengarah ke kipas karena hardware tertukar
-  const kontrolRef = ref(database, "kontrol/kipas");
+  const kontrolRef = ref(database, "kontrol/solenoid");
   await set(kontrolRef, value);
 }
 
@@ -212,10 +202,6 @@ export function subscribeLogHistory(limit, callback) {
     const data = [];
     snapshot.forEach((child) => {
       const raw = child.val();
-      // SWAP data kipas dan solenoid
-      const tempKipas = raw.kipas;
-      raw.kipas = raw.solenoid;
-      raw.solenoid = tempKipas;
       data.push({ id: child.key, ...raw });
     });
     callback(data.sort((a, b) => a.timestamp - b.timestamp));
