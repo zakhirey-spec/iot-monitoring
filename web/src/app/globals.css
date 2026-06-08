@@ -1,18 +1,25 @@
 :root {
-  /* Industrial Color Palette */
-  --bg-dark: #121417;        /* Gunmetal dark */
-  --bg-panel: #1a1e23;       /* Slightly lighter panel */
-  --bg-card: #22262b;        /* Card background */
+  /* Modern Cyberpunk / Dark Premium Palette */
+  --bg-dark: #09090b;        /* Very dark background */
+  --bg-panel: rgba(24, 24, 27, 0.6); /* Translucent panel */
+  --bg-card: rgba(39, 39, 42, 0.4);  /* Translucent card */
   
-  --text-main: #e2e8f0;      /* Light gray */
-  --text-muted: #94a3b8;     /* Muted gray */
+  --text-main: #f8fafc;      /* Pure white-ish */
+  --text-muted: #94a3b8;     /* Slate */
   
-  --accent-blue: #3b82f6;    /* Industrial blue */
-  --accent-yellow: #eab308;  /* Safety yellow / Warning */
-  --accent-red: #ef4444;     /* Alert red */
-  --accent-green: #22c55e;   /* Success green */
+  --accent-blue: #3b82f6;    /* Vibrant Blue */
+  --accent-blue-glow: rgba(59, 130, 246, 0.15);
+  --accent-yellow: #f59e0b;  /* Vibrant Amber */
+  --accent-red: #ef4444;     /* Vibrant Red */
+  --accent-green: #10b981;   /* Emerald Green */
   
-  --border-color: #334155;   /* Slate border */
+  --border-light: rgba(255, 255, 255, 0.08); /* Subtle glass border */
+  --border-color: rgba(255, 255, 255, 0.08); 
+  
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
   
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -26,6 +33,10 @@
 
 body {
   background-color: var(--bg-dark);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.07) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%);
+  background-attachment: fixed;
   color: var(--text-main);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -44,23 +55,32 @@ button {
   cursor: pointer;
 }
 
-/* Custom Scrollbar for Industrial Look */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg-dark);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+/* Glassmorphism Utilities */
+.glass {
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-light);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
 }
 
-/* Layout Utilities (Sidebar Space) */
+/* Custom Scrollbar for Industrial Look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Layout Utilities */
 .app-container {
   display: flex;
   min-height: 100vh;
@@ -68,15 +88,88 @@ button {
 
 .main-content {
   flex: 1;
-  padding: 0; /* Let page.module.css handle padding */
-  margin-left: 280px; /* Sidebar width */
-  transition: all 0.3s ease;
+  padding: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow-x: hidden;
 }
 
+.main-content.with-sidebar {
+  margin-left: 280px;
+}
+
 @media (max-width: 1024px) {
-  .main-content {
+  .main-content.with-sidebar {
     margin-left: 0;
-    padding-top: 5rem; /* Space for mobile header */
+    padding-top: 4rem; /* Jarak untuk mobile header */
   }
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes pulseRed {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Shared page styles (for Riwayat) */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-light);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 0.25rem;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.badge-neutral {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+}
+.badge-success {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.badge-danger {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: var(--accent-red);
+  border: 1px solid rgba(239, 68, 68, 0.2);
 }

@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { subscribeAlarms } from "@/lib/firebase";
+import { auth, subscribeAlarms } from "@/lib/firebase";
+import { signOut } from "firebase/auth";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   useEffect(() => {
     // Listen to latest 20 alarms for unread count
@@ -17,6 +19,14 @@ export default function Sidebar() {
     });
     return () => unsubscribe();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
 
   const navItems = [
     { name: "Dashboard", path: "/", icon: "📊" },
@@ -32,13 +42,15 @@ export default function Sidebar() {
           left: 0;
           bottom: 0;
           width: 280px;
-          background-color: var(--bg-card);
+          background: rgba(18, 20, 23, 0.7);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
           border-right: 1px solid var(--border-light);
           padding: 2rem 1.5rem;
           display: flex;
           flex-direction: column;
           z-index: 50;
-          transition: transform 0.3s ease;
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .brand {
@@ -136,7 +148,9 @@ export default function Sidebar() {
           left: 0;
           right: 0;
           height: 4rem;
-          background-color: var(--bg-card);
+          background: rgba(18, 20, 23, 0.7);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
           border-bottom: 1px solid var(--border-light);
           z-index: 40;
           align-items: center;
@@ -155,6 +169,7 @@ export default function Sidebar() {
         @media (max-width: 1024px) {
           .sidebar {
             transform: translateX(-100%);
+            box-shadow: 20px 0 50px rgba(0,0,0,0.5);
           }
           .sidebar.open {
             transform: translateX(0);
@@ -163,17 +178,36 @@ export default function Sidebar() {
             display: flex;
           }
         }
+        
+        .overlay {
+          display: none;
+          position: fixed;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(0,0,0,0.5);
+          backdrop-filter: blur(4px);
+          z-index: 45;
+          transition: opacity 0.3s;
+        }
+        @media (max-width: 1024px) {
+          .overlay.open {
+            display: block;
+          }
+        }
       `}</style>
 
-      {/* Placeholder Mobile Header (Logic open/close omitted for simplicity, can be added if needed) */}
-      <div className="mobile-header glass">
+      {/* Mobile Header */}
+      <div className="mobile-header">
         <div className="brand-text">
-          <h1 style={{fontSize: "1.1rem", fontWeight: "bold"}}>IoT Logistik</h1>
+          <h1 style={{fontSize: "1.1rem", fontWeight: "bold", color: "#fff"}}>IoT Logistik</h1>
         </div>
-        <button className="menu-toggle">☰</button>
+        <button className="menu-toggle" onClick={() => setIsMobileOpen(!isMobileOpen)}>
+          {isMobileOpen ? '✕' : '☰'}
+        </button>
       </div>
 
-      <aside className="sidebar">
+      <div className={`overlay ${isMobileOpen ? 'open' : ''}`} onClick={() => setIsMobileOpen(false)}></div>
+
+      <aside className={`sidebar ${isMobileOpen ? 'open' : ''}`}>
         <div className="brand">
           <div className="brand-icon">📦</div>
           <div className="brand-text">
@@ -186,7 +220,11 @@ export default function Sidebar() {
           <ul className="nav-list">
             {navItems.map((item) => (
               <li key={item.path}>
-                <Link href={item.path} className={`nav-item ${pathname === item.path ? "active" : ""}`}>
+                <Link 
+                  href={item.path} 
+                  className={`nav-item ${pathname === item.path ? "active" : ""}`}
+                  onClick={() => setIsMobileOpen(false)}
+                >
                   <span>{item.icon}</span>
                   {item.name}
                 </Link>
@@ -195,7 +233,31 @@ export default function Sidebar() {
           </ul>
         </nav>
 
-        <div className="footer">
+        <div style={{ marginTop: 'auto', padding: '0 0.5rem' }}>
+          <button 
+            onClick={handleLogout}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              backgroundColor: 'rgba(248, 81, 73, 0.1)',
+              color: '#f85149',
+              border: '1px solid rgba(248, 81, 73, 0.2)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+              transition: 'all 0.2s ease',
+              marginBottom: '1rem'
+            }}
+          >
+            <span>🚪</span> Keluar (Logout)
+          </button>
+        </div>
+
+        <div className="footer" style={{ marginTop: '0' }}>
           <p>Sistem Monitoring v2.0</p>
           <p style={{marginTop: "0.25rem", opacity: 0.6}}>ESP32 + Firebase</p>
         </div>

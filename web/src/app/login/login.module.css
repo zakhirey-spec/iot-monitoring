@@ -1,0 +1,127 @@
+.loginContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+  background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+}
+
+.loginCard {
+  background-color: #1c2128;
+  border-radius: 16px;
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.iconContainer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background-color: rgba(46, 160, 67, 0.1);
+  margin-bottom: 16px;
+}
+
+.icon {
+  font-size: 28px;
+}
+
+.header h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 8px 0;
+}
+
+.header p {
+  font-size: 14px;
+  color: #8b949e;
+  margin: 0;
+}
+
+.errorAlert {
+  background-color: rgba(248, 81, 73, 0.1);
+  border-left: 4px solid #f85149;
+  color: #f85149;
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inputGroup label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #c9d1d9;
+}
+
+.inputGroup input {
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  background-color: #0d1117;
+  color: #fff;
+  font-size: 15px;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.inputGroup input:focus {
+  outline: none;
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+.inputGroup input::placeholder {
+  color: #484f58;
+}
+
+.loginButton {
+  background-color: #2ea043;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  margin-top: 10px;
+}
+
+.loginButton:hover {
+  background-color: #2c974b;
+}
+
+.loginButton:active {
+  transform: translateY(1px);
+}
+
+.loginButton:disabled {
+  background-color: #238636;
+  opacity: 0.7;
+  cursor: not-allowed;
+}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import styles from './page.module.css';
+import ProtectedRoute from '@/components/ProtectedRoute';
 import {
   subscribeRealtime,
   subscribeStatus,
@@ -66,17 +67,19 @@ export default function Home() {
         label: 'Suhu (°C)',
         data: logs.map(l => l.suhu).slice(-20),
         borderColor: '#ef4444',
-        backgroundColor: 'rgba(239, 68, 68, 0.5)',
+        backgroundColor: 'rgba(239, 68, 68, 0.2)',
         yAxisID: 'y',
-        tension: 0.3
+        tension: 0.4,
+        fill: true
       },
       {
         label: 'Kelembapan (%)',
         data: logs.map(l => l.kelembapan).slice(-20),
         borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+        backgroundColor: 'rgba(59, 130, 246, 0.2)',
         yAxisID: 'y1',
-        tension: 0.3
+        tension: 0.4,
+        fill: true
       }
     ]
   };
@@ -89,15 +92,16 @@ export default function Home() {
       legend: { labels: { color: '#94a3b8' } }
     },
     scales: {
-      x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
-      y: { type: 'linear', display: true, position: 'left', ticks: { color: '#ef4444' }, grid: { color: '#334155' } },
+      x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      y: { type: 'linear', display: true, position: 'left', ticks: { color: '#ef4444' }, grid: { color: 'rgba(255,255,255,0.05)' } },
       y1: { type: 'linear', display: true, position: 'right', ticks: { color: '#3b82f6' }, grid: { drawOnChartArea: false } }
     }
   };
 
   return (
-    <div className={styles.dashboard}>
-      {/* Header */}
+    <ProtectedRoute>
+      <div className={styles.dashboard}>
+        {/* Header */}
       <div className={styles.header}>
         <div className={styles.title}>Industrial Monitoring SCADA</div>
         <div className={styles.statusIndicator}>
@@ -128,8 +132,8 @@ export default function Home() {
         <div className={`${styles.card} ${styles.normal}`}>
           <div className={styles.cardTitle}>Status Hardware</div>
           <div style={{ marginTop: '10px', fontSize: '0.9rem', color: '#94a3b8', lineHeight: '1.8' }}>
-            <div>Kipas: <span className={`badge ${realtime.kipas ? 'green' : 'red'}`}>{realtime.kipas ? 'ON' : 'OFF'}</span></div>
-            <div>Solenoid: <span className={`badge ${realtime.solenoid ? 'green' : 'red'}`}>{realtime.solenoid ? 'OPEN' : 'LOCKED'}</span></div>
+            <div>Kipas: <span className={realtime.kipas ? 'badge-success' : 'badge-danger'} style={{padding:'2px 6px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:'bold', marginLeft:'4px'}}>{realtime.kipas ? 'ON' : 'OFF'}</span></div>
+            <div>Solenoid: <span className={realtime.solenoid ? 'badge-success' : 'badge-danger'} style={{padding:'2px 6px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:'bold', marginLeft:'4px'}}>{realtime.solenoid ? 'OPEN' : 'LOCKED'}</span></div>
           </div>
         </div>
       </div>
@@ -248,7 +252,7 @@ export default function Home() {
                   <td>{log.suhu?.toFixed(1)}°C</td>
                   <td>{log.kelembapan?.toFixed(1)}%</td>
                   <td>
-                    <span className={`badge ${log.pintu ? 'red' : 'green'}`}>
+                    <span className={log.pintu ? 'badge-danger' : 'badge-success'} style={{padding:'4px 8px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:'bold'}}>
                       {log.pintu ? 'BUKA' : 'KUNCI'}
                     </span>
                   </td>
@@ -262,5 +266,6 @@ export default function Home() {
       </div>
 
     </div>
+    </ProtectedRoute>
   );
 }

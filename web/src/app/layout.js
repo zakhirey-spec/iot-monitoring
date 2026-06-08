@@ -1,5 +1,6 @@
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+import { AuthProvider } from "@/components/AuthProvider";
+import AppLayoutWrapper from "@/components/AppLayoutWrapper";
 
 export const metadata = {
   title: "IoT Monitoring Kontainer",
@@ -15,12 +16,11 @@ export default function RootLayout({ children }) {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body>
-        <div className="app-container">
-          <Sidebar />
-          <main className="main-content">
+        <AuthProvider>
+          <AppLayoutWrapper>
             {children}
-          </main>
-        </div>
+          </AppLayoutWrapper>
+        </AuthProvider>
       </body>
     </html>
   );

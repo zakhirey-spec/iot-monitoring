@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { subscribeLogHistory } from "@/lib/firebase";
 import HistoryChart from "@/components/HistoryChart";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function RiwayatPage() {
   const [logs, setLogs] = useState([]);
@@ -36,8 +37,9 @@ export default function RiwayatPage() {
   };
 
   return (
-    <div className="animate-fade-in">
-      <div className="page-header">
+    <ProtectedRoute>
+      <div className="animate-fade-in" style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }}>
+        <div className="page-header">
         <div>
           <h1 className="page-title">Riwayat Data</h1>
           <p className="subtitle">Log historis sensor dan kondisi kontainer</p>
@@ -77,12 +79,12 @@ export default function RiwayatPage() {
       </div>
 
       <div className="card glass">
-        <h3 style={{ fontSize: "1.1rem", marginBottom: "1rem" }}>Tabel Data Log</h3>
+        <h3 style={{ fontSize: "1.1rem", marginBottom: "1.25rem", color: "var(--text-main)" }}>Tabel Data Log</h3>
 
         <div style={{ overflowX: "auto" }}>
-          <table className="data-table">
+          <table style={{width: '100%', borderCollapse: 'separate', borderSpacing: '0 0.5rem', fontSize: '0.85rem'}}>
             <thead>
-              <tr>
+              <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
                 <th>Waktu</th>
                 <th>Suhu (°C)</th>
                 <th>Kelembapan (%)</th>
@@ -92,30 +94,30 @@ export default function RiwayatPage() {
             </thead>
             <tbody>
               {logs.slice().reverse().map((log, index) => (
-                <tr key={log.id || index}>
-                  <td>{formatDate(log)}</td>
-                  <td>
-                    <span style={{ color: log.suhu > 30 ? "var(--danger)" : "inherit" }}>
+                <tr key={log.id || index} style={{transition: 'transform 0.2s'}}>
+                  <td style={{padding: '1rem', background: 'rgba(0,0,0,0.2)', borderTopLeftRadius: 'var(--radius-md)', borderBottomLeftRadius: 'var(--radius-md)'}}>{formatDate(log)}</td>
+                  <td style={{padding: '1rem', background: 'rgba(0,0,0,0.2)'}}>
+                    <span style={{ color: log.suhu > 30 ? "var(--accent-red)" : "inherit" }}>
                       {log.suhu.toFixed(1)}
                     </span>
                   </td>
-                  <td>
-                    <span style={{ color: log.kelembapan > 80 ? "var(--danger)" : "inherit" }}>
+                  <td style={{padding: '1rem', background: 'rgba(0,0,0,0.2)'}}>
+                    <span style={{ color: log.kelembapan > 80 ? "var(--accent-red)" : "inherit" }}>
                       {log.kelembapan.toFixed(1)}
                     </span>
                   </td>
-                  <td>
+                  <td style={{padding: '1rem', background: 'rgba(0,0,0,0.2)'}}>
                     {log.pintu ? (
-                      <span className="badge badge-danger">TERBUKA</span>
+                      <span className="badge-danger" style={{padding:'4px 8px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:'bold'}}>TERBUKA</span>
                     ) : (
-                      <span className="badge badge-success">TERTUTUP</span>
+                      <span className="badge-success" style={{padding:'4px 8px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:'bold'}}>TERTUTUP</span>
                     )}
                   </td>
-                  <td>
+                  <td style={{padding: '1rem', background: 'rgba(0,0,0,0.2)', borderTopRightRadius: 'var(--radius-md)', borderBottomRightRadius: 'var(--radius-md)'}}>
                     {log.kipas ? (
-                      <span className="badge badge-neutral" style={{ color: "var(--accent-blue)" }}>ON</span>
+                      <span className="badge-neutral" style={{ color: "var(--accent-blue)", padding:'4px 8px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:'bold' }}>ON</span>
                     ) : (
-                      <span className="badge badge-neutral">OFF</span>
+                      <span className="badge-neutral" style={{padding:'4px 8px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:'bold'}}>OFF</span>
                     )}
                   </td>
                 </tr>
@@ -132,5 +134,6 @@ export default function RiwayatPage() {
         </div>
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

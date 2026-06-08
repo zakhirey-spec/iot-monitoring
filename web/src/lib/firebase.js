@@ -1,5 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getDatabase, ref, onValue, set, push, get, query, orderByChild, limitToLast, update } from "firebase/database";
+import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -21,6 +22,7 @@ if (missingEnvVars.length) {
 
 let app;
 let database;
+let auth;
 
 try {
   if (!getApps().length) {
@@ -29,6 +31,7 @@ try {
     app = getApps()[0];
   }
   database = getDatabase(app);
+  auth = getAuth(app);
 } catch (error) {
   console.error('Firebase initialization failed:', error);
 }
@@ -73,8 +76,11 @@ export function subscribeRealtime(callback) {
     realtimeRef,
     (snapshot) => {
       const rawData = snapshot.val();
-      const data = { ...DEFAULT_REALTIME, ...(rawData || {}) };
-      callback(data);
+      callback({ 
+      ...DEFAULT_REALTIME, 
+      ...(rawData || {}), 
+      timestamp: rawData?.timestamp ? rawData.timestamp * 1000 : 0
+    });
     },
     (error) => {
       console.error('Firebase realtime subscription error:', error);
@@ -95,7 +101,11 @@ export function subscribeStatus(callback) {
     statusRef,
     (snapshot) => {
       const data = snapshot.val();
-      callback({ ...DEFAULT_STATUS, ...(data || {}), timestamp: Date.now() });
+      callback({ 
+      ...DEFAULT_STATUS, 
+      ...(data || {}), 
+      timestamp: data?.timestamp ? data.timestamp * 1000 : 0
+    });
     },
     (error) => {
       console.error('Firebase status subscription error:', error);
@@ -247,4 +257,4 @@ export async function markAllAlarmsAsRead(alarmIds) {
 // ==========================================
 // 🔧 UTILITY EXPORTS
 // ==========================================
-export { database, ref, onValue, set, push, get };
+export { database, auth, ref, onValue, set, push, get };
